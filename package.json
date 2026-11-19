@@ -1,0 +1,17 @@
+{
+  "name": "oncall-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc && tsx scripts/copy-dashboard.ts",
+    "test": "tsx --test test/*.test.ts",
+    "migrate": "tsx src/db/migrate.ts",
+    "smoke": "tsx scripts/send-event.ts"
+  }
+}

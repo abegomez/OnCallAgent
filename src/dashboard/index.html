@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OnCallAgent</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #10141a;
+        --panel: #181e27;
+        --line: #2c3644;
+        --text: #e8eef7;
+        --muted: #93a0b5;
+        --received: #8ea0b5;
+        --investigating: #6cb6ff;
+        --awaiting: #f0b429;
+        --executed: #3ecf8e;
+        --rejected: #c084fc;
+        --failed: #ff7b72;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font: 14px/1.45 "Segoe UI", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      header, main { width: min(1120px, calc(100% - 32px)); margin: 0 auto; }
+      header { padding: 28px 0 8px; display: flex; justify-content: space-between; gap: 16px; align-items: end; }
+      h1 { font-size: 22px; margin: 0 0 4px; font-weight: 650; }
+      p { margin: 0; color: var(--muted); }
+      .token { display: flex; gap: 8px; align-items: center; }
+      input {
+        background: var(--panel);
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px 10px;
+        min-width: 220px;
+      }
+      .counts { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
+      .counts button, .row-actions button, .detail-actions button {
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--text);
+        border-radius: 999px;
+        padding: 6px 10px;
+        cursor: pointer;
+      }
+      .counts button.active { border-color: var(--text); }
+      table { width: 100%; border-collapse: collapse; background: var(--panel); border-radius: 12px; overflow: hidden; }
+      th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+      th { color: var(--muted); font-weight: 600; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; }
+      tr { cursor: pointer; }
+      tr:hover td { background: #202836; }
+      .badge { display: inline-flex; align-items: center; gap: 6px; font-weight: 650; }
+      .badge i { width: 8px; height: 8px; border-radius: 99px; display: inline-block; background: var(--received); }
+      .RECEIVED i { background: var(--received); }
+      .INVESTIGATING i { background: var(--investigating); }
+      .AWAITING_APPROVAL i { background: var(--awaiting); }
+      .EXECUTED i { background: var(--executed); }
+      .REJECTED i { background: var(--rejected); }
+      .FAILED i { background: var(--failed); }
+      .mono { font-family: Consolas, monospace; font-size: 12px; }
+      .detail { margin: 16px 0 32px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+      pre { white-space: pre-wrap; word-break: break-word; margin: 8px 0 0; color: #d5deea; }
+      .timeline { list-style: none; padding: 0; margin: 8px 0 0; }
+      .timeline li { padding: 6px 0; border-top: 1px solid var(--line); }
+      .error { color: var(--failed); min-height: 1.2em; }
+      .hidden { display: none; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>OnCallAgent</h1>
+        <p>Ingested runs. Approval is required before any state-changing action.</p>
+      </div>
+      <label class="token">Ops token <input id="token" type="password" autocomplete="off" placeholder="Bearer token" /></label>
+    </header>
+    <main>
+      <div id="counts" class="counts"></div>
+      <p id="error" class="error"></p>
+      <table>
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>State</th>
+            <th>Source</th>
+            <th>Type</th>
+            <th>Run</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <section id="detail" class="detail hidden"></section>
+    </main>
+    <script>
+      const states = ["RECEIVED", "INVESTIGATING", "AWAITING_APPROVAL", "EXECUTED", "REJECTED", "FAILED"];
+      const tokenInput = document.querySelector("#token");
+      const counts = document.querySelector("#counts");
+      const rows = document.querySelector("#rows");
+      const detail = document.querySelector("#detail");
+      const error = document.querySelector("#error");
+      let filter = "";
+      let selected = "";
+      tokenInput.value = sessionStorage.getItem("opsToken") || "";
+      tokenInput.addEventListener("change", () => sessionStorage.setItem("opsToken", tokenInput.value.trim()));
+
+      function el(tag, text, className) {
+        const node = document.createElement(tag);
+        if (text != null) node.textContent = text;
+        if (className) node.className = className;
+        return node;
+      }
+
+      function badge(state) {
+        const node = el("span", "", "badge " + state);
+        node.append(el("i"));
+        node.append(document.createTextNode(state));
+        return node;
+      }
+
+      function renderCounts(data) {
+        counts.replaceChildren();
+        const all = el("button", "All", filter ? "" : "active");
+        all.addEventListener("click", () => { filter = ""; load(); });
+        counts.append(all);
+        for (const state of states) {
+          const button = el("button", state + " " + (data[state] || 0), filter === state ? "active " + state : state);
+          button.addEventListener("click", () => { filter = state; load(); });
+          counts.append(button);
+        }
+      }
+
+      async function load() {
+        const query = filter ? "?state=" + encodeURIComponent(filter) : "";
+        const response = await fetch("/runs" + query);
+        if (!response.ok) {
+          error.textContent = "Could not load runs (" + response.status + ")";
+          return;
+        }
+        error.textContent = "";
+        const body = await response.json();
+        renderCounts(body.counts);
+        rows.replaceChildren();
+        for (const run of body.runs) {
+          const tr = document.createElement("tr");
+          tr.append(
+            el("td", new Date(run.createdAt).toLocaleString()),
+            el("td", "", ""),
+            el("td", run.source),
+            el("td", run.eventType),
+            el("td", run.id.slice(0, 8), "mono"),
+          );
+          tr.children[1].append(badge(run.state));
+          tr.addEventListener("click", () => openRun(run.id));
+          rows.append(tr);
+        }
+        if (!body.runs.length) {
+          const tr = document.createElement("tr");
+          tr.append(el("td", "No runs yet."));
+          tr.firstChild.colSpan = 5;
+          rows.append(tr);
+        }
+      }
+
+      async function openRun(id) {
+        selected = id;
+        const response = await fetch("/runs/" + id);
+        if (!response.ok) {
+          error.textContent = "Could not load run";
+          return;
+        }
+        const body = await response.json();
+        const run = body.run;
+        detail.classList.remove("hidden");
+        detail.replaceChildren(
+          el("h2", run.source + " / " + run.eventType),
+          badge(run.state),
+          el("p", run.id, "mono"),
+        );
+        if (run.state === "AWAITING_APPROVAL") {
+          const actions = el("div", "", "detail-actions");
+          const approve = el("button", "Approve");
+          const reject = el("button", "Reject");
+          approve.addEventListener("click", () => decide(run.id, "approve"));
+          reject.addEventListener("click", () => decide(run.id, "reject"));
+          actions.append(approve, reject);
+          detail.append(actions);
+        }
+        detail.append(el("h3", "Payload"), el("pre", JSON.stringify(run.payload, null, 2)));
+        if (run.result) detail.append(el("h3", "Result"), el("pre", JSON.stringify(run.result, null, 2)));
+        if (run.error) detail.append(el("h3", "Error"), el("pre", run.error));
+        const list = el("ol", "", "timeline");
+        for (const item of body.transitions) {
+          const line = (item.fromState ? item.fromState + " → " : "") + item.toState;
+          const li = el("li", line + (item.reason ? " — " + item.reason : ""));
+          list.append(li);
+        }
+        detail.append(el("h3", "Transitions"), list);
+      }
+
+      async function decide(id, action) {
+        error.textContent = "";
+        const response = await fetch("/runs/" + id + "/decisions", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: "Bearer " + tokenInput.value.trim(),
+          },
+          body: JSON.stringify({ action: action }),
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          error.textContent = body.message || "Decision failed";
+          return;
+        }
+        await load();
+        await openRun(id);
+      }
+
+      load();
+      setInterval(() => { if (!document.hidden) load(); }, 2000);
+    </script>
+  </body>
+</html>
