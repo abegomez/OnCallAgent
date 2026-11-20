@@ -22,6 +22,7 @@ interface RequestWithRaw extends FastifyRequest {
 
 export function buildApp(deps: AppDeps): FastifyInstance {
   const app = Fastify({ logger: deps.logger ?? true });
+
   app.removeContentTypeParser("application/json");
   app.addContentTypeParser(
     "application/json",
@@ -75,12 +76,19 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     if (error instanceof ConflictError || error instanceof IllegalTransitionError) {
       return reply.code(409).send({ error: "conflict", message: error.message });
     }
-    const statusCode = "statusCode" in error && typeof error.statusCode === "number" ? error.statusCode : 500;
+    const statusCode =
+      typeof error === "object" &&
+      error !== null &&
+      "statusCode" in error &&
+      typeof error.statusCode === "number"
+        ? error.statusCode
+        : 500;
+    const message = error instanceof Error ? error.message : "Request failed";
     if (statusCode === 401) {
-      return reply.code(401).send({ error: "unauthorized", message: error.message });
+      return reply.code(401).send({ error: "unauthorized", message });
     }
     if (statusCode >= 400 && statusCode < 500) {
-      return reply.code(statusCode).send({ error: "bad_request", message: error.message });
+      return reply.code(statusCode).send({ error: "bad_request", message });
     }
     request.log.error(error);
     return reply.code(500).send({ error: "internal_error", message: "Internal error" });

@@ -1,6 +1,6 @@
-import type { RunRecord } from "../domain.js";
-import { ConflictError } from "../errors.js";
-import type { ActionExecutor, RunRepository } from "../repo/types.js";
+import type { RunRecord } from "./domain.js";
+import { ConflictError } from "./errors.js";
+import type { ActionExecutor, RunRepository } from "./repo/types.js";
 
 export type DecisionAction = "approve" | "reject";
 
